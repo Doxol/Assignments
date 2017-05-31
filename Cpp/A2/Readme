@@ -1,0 +1,39 @@
+Readme:
+
+How to Compile:
+make
+
+How to Run:
+./boilerplate
+
+Features:
+	Change Color Filter: 1
+		Change Current Color Filter: Left and Right
+		If Color Filter Is at 5 or 6
+			Change Level of Effect: Up and Down
+
+	Change Image Rotation: 2
+		Rotate Image Counter Clockwise: Left
+		Rotate Image Clockwise: Right
+	
+	Change Current Image: 3
+		Change Current Image: Left and Right
+	
+	Change Level of Gaussian Blur: 4
+		Increment Level of Gaussian Blur: Up
+		Decrement Level of Gaussian Blur: Down
+	
+	Change Edge Filters: 5
+		Change Current Edge Filter: Up and Down
+
+	Zoom:
+		Zoom in: Scroll Up
+		Zoom out: Scroll Down
+	Pan The Image:
+		Pan Left: "Grab" the screen by clicking and move mouse to the left
+		Pan Right: "Grab" the screen by clicking and move mouse to the right
+		Pan Up: "Grab" the screen by clicking and move the mouse up
+		Pan Down: "Grab" the screen by clicking and move the mouse down
+
+
+

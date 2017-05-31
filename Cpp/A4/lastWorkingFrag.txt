@@ -1,0 +1,635 @@
+// ==========================================================================
+// Vertex program for barebones GLFW boilerplate
+//
+// Author:  Sonny Chan, University of Calgary
+// Date:    December 2015
+// ==========================================================================
+#version 410
+
+// interpolated colour received from vertex stage
+in vec3 Colour;
+in vec2 textureCoords;
+
+// first output is mapped to the framebuffer's colour index by default
+out vec4 FragmentColour;
+in vec2 position;
+
+int phong = 2;
+
+#define LIGHT 0
+#define SPHERE 1
+#define REFLECTIVESPHERE 2
+#define TRIANGLE 3
+#define REFLECTIVETRIANGLE 4
+#define PLANE 5
+#define REFLECTIVEPLANE 6
+#define REFLECTIONS 10
+
+
+//sphere
+float checkIntersection(vec3 direction, vec3 origin, vec4 sphere, float t){
+	float ret = t;
+
+	vec3 center = vec3(sphere.x, sphere.y, sphere.z);
+	float radius = sphere.w;		
+
+	float a = dot(direction, direction);
+	float b = 2 * ((dot(origin, direction)) - (dot(center, direction)));
+	float c = dot(origin, origin) - (2 * dot(origin, center)) + dot(center, center) - (radius * radius);
+
+	float discrim = (b*b) - (4*a*c);
+
+	if (discrim < 0){
+		return ret;
+	}
+
+	float t1 = (-b + sqrt(discrim)) / (2*a);
+	float t2 = (-b - sqrt(discrim)) / (2*a);
+
+	if (t1 < t2){
+		ret = t1; 
+	}	
+
+	else {
+		ret = t2;
+	}
+	return ret;
+}
+
+
+//triangle
+float checkIntersection(vec3 d, vec3 o, vec3 p0, vec3 p1, vec3 p2, float t){
+	float ret = t;
+
+	vec3 e1 = p1 - p0;
+	vec3 e2 = p2 - p0;
+	vec3 s = o - p0;
+
+	mat3 m0 = mat3(-d, e1, e2);
+	mat3 m1 = mat3(s, e1, e2);
+	mat3 m2 = mat3(-d, s, e2);
+	mat3 m3 = mat3(-d, e1, s);
+
+	float d0 = determinant(m0);
+	float d1 = determinant(m1);
+	float d2 = determinant(m2);
+	float d3 = determinant(m3);
+
+	vec3 dets = vec3(d1, d2, d3);
+
+	vec3 tuv = (1/d0) * dets;
+
+	if (tuv.x > 0)
+		if (((tuv.y + tuv.z) >= 0) && ((tuv.y + tuv.z) <= 1))
+			if ((tuv.y >= 0) && (tuv.y <= 1))
+				if ((tuv.z >= 0) && (tuv.z <= 1))
+					ret = (tuv.x >= 0) ? tuv.x : ret;
+
+	return ret;
+}
+
+
+//plane
+float checkIntersection(vec3 d, vec3 o, vec3 p, vec3 q, float t){
+	float ret = t;
+
+	vec3 n = p * q;
+
+	float qn = dot(q, n);
+	float on = dot(o, n);
+	float dn = dot(d, n);
+
+	float numerator = qn - on;
+	ret = numerator/dn;
+
+	return ret;
+}
+
+
+vec3 sNormalVec(vec3 origin, float t, vec3 d, vec4 sphere){
+	return normalize((origin + (t * d)) - vec3(sphere.x, sphere.y, sphere.z));
+}
+
+vec3 tNormalVec(vec3 t0, vec3 t1, vec3 t2){
+	vec3 t1t0 = t2 - t0;
+	vec3 t1t2 = t2 - t1;
+	return (dot(t1t0, t1t2) > 0) ? normalize(cross(t1t0, t1t2)) : -normalize(cross(t1t0, t1t2));
+}
+
+
+vec3 colorEquation(vec3 l, vec3 cl, vec3 n, vec3 cr, vec3 light, vec3 origin, vec3 d, float t, vec3 cp){
+
+	vec3 e = normalize(-d);
+	vec3 h = normalize(e + l);
+	vec3 ca = vec3(0.2f, 0.2f, 0.2f);
+
+	return cr * (ca + cl * max(0, dot(n, l))) + cl * cp * pow(max(0, dot(h, n)), phong);	
+}
+
+float checkShadows(float[999] myObjects, float t, int start, int arraySize, vec3 origin, vec3 direction){
+	float prevT = t;
+	float minDist = 1000000000;
+	int increment;
+	int i = start;
+	while (i < arraySize){
+		increment = 1;
+
+		if ((myObjects[i] >= SPHERE) && (myObjects[i] <= REFLECTIVESPHERE)){
+			t = checkIntersection(direction, origin, vec4(myObjects[i+1], myObjects[i+2], myObjects[i+3], myObjects[i+4]), t);
+			if (t != prevT && t >= 0.01f){
+				if (t < minDist)
+					minDist = t;
+			}
+			else if (t != prevT && t < 0.01f){
+				t = prevT;
+			}
+			increment = 0;
+			i += 8;
+		}
+		else if ((myObjects[i] >= TRIANGLE) && (myObjects[i] <= REFLECTIVETRIANGLE)){
+			t = checkIntersection(direction, origin, vec3(myObjects[i+1], myObjects[i+2], myObjects[i+3]), vec3(myObjects[i+4], myObjects[i+5], myObjects[i+6]), vec3(myObjects[i+7], myObjects[i+8], myObjects[i+9]), t);
+			if (t != prevT && t >= 0.01f){
+				if (t < minDist)
+					minDist = t;
+			}
+			else if (t != prevT && t < 0.01f){
+				t = prevT;
+			}
+			increment = 0;
+			i += 13;
+		}
+		else if ((myObjects[i] >= PLANE) && (myObjects[i] <= REFLECTIVEPLANE)){
+			t = checkIntersection(direction, origin, vec3(myObjects[i+1], myObjects[i+2], myObjects[i+3]), vec3(myObjects[i+4], myObjects[i+5], myObjects[i+6]), t);
+			if (t != prevT && t >= 0.01f){
+				if (t < minDist)
+					minDist = t;
+			}
+			else if (t != prevT && t < 0.01f){
+				t = prevT;
+			}
+			increment = 0;
+			i += 10;
+		}
+		i += increment;
+	}
+
+	return minDist;
+}
+
+vec2 checkIntersects(float[999] myObjects, int arraySize, vec3 direction, vec3 origin, float closestPoint, int lightIndex){
+	int i = lightIndex + 7;
+
+	float t;
+	vec2 ret = vec2(-1000.f, t);
+
+
+	int increment;
+	vec4 sphere;
+
+	while (i < arraySize){
+		increment = 1;
+		if ((myObjects[i] >= SPHERE) && (myObjects[i] <= (REFLECTIVESPHERE))) {
+			sphere = vec4(myObjects[i+1], myObjects[i+2], myObjects[i+3], myObjects[i+4]);
+			t = checkIntersection(direction, origin, sphere, t);
+			if (t > 0.01 && t < closestPoint){
+				closestPoint = t;
+				ret[0] = i;
+				ret[1] = t;
+			}
+			increment = 0;
+			i += 8;
+		}
+		else if ((myObjects[i] >= TRIANGLE) && (myObjects[i] <= (REFLECTIVETRIANGLE))) {
+			t = checkIntersection(direction, origin, vec3(myObjects[i+1], myObjects[i+2], myObjects[i+3]), vec3(myObjects[i+4], myObjects[i+5], myObjects[i+6]), vec3(myObjects[i+7], myObjects[i+8], myObjects[i+9]), t);
+			if (t > 0.01 && t < closestPoint){
+				closestPoint = t;
+				ret[0] = i;
+				ret[1] = t;
+			}
+			increment = 0;
+			i += 13;
+		}
+		else if ((myObjects[i] >= PLANE) && (myObjects[i] <= (REFLECTIVEPLANE))) {
+			t = checkIntersection(direction, origin, vec3(myObjects[i+1], myObjects[i+2], myObjects[i+3]), vec3(myObjects[i+4], myObjects[i+5], myObjects[i+6]), t);
+			if (t > 0.01 && t < closestPoint){
+				closestPoint = t;
+				ret[0] = i;
+				ret[1] = t;
+			}
+			increment = 0;
+			i += 10;
+		}
+		i += increment;
+	}
+
+	return ret;
+}
+
+vec3 reflectionRay;
+vec3 reflectOrigin;
+float reflectiveness;
+vec4 calculateColor(float[999] myObjects, int arraySize, vec3 direction, vec3 origin, float closestPoint, int lightIndex){
+	vec4 colour;
+	float t;
+	vec3 light = vec3(myObjects[1], myObjects[2], myObjects[3]);
+	vec3 norm;
+	vec4 sphere;
+	vec3 objectColor;
+	vec3 l;
+	vec3 lightIntensity = vec3(myObjects[lightIndex + 4], myObjects[lightIndex + 5], myObjects[lightIndex + 6]);
+	vec3 cl;
+	vec3 cp = vec3(1.f, 1.f, 1.f);
+	
+	int i = lightIndex + 7;
+
+	float isShadow = 0;
+
+	vec2 ret = checkIntersects(myObjects, arraySize, direction, origin, closestPoint, lightIndex);
+	if (ret[0] != -1000){
+		i = int(ret[0]);
+		t = ret[1];
+		if ((myObjects[i] >= SPHERE) && (myObjects[i] <= (REFLECTIVESPHERE))){
+			sphere = vec4(myObjects[i+1], myObjects[i+2], myObjects[i+3], myObjects[i+4]);
+			objectColor = vec3(myObjects[i+5], myObjects[i+6], myObjects[i+7]);
+			norm = sNormalVec(origin, t, direction, sphere);
+			l = normalize(light - (origin + (t * direction)));
+			isShadow = checkShadows(myObjects, t, lightIndex + 7, arraySize, origin + t*direction, l);
+			cl = lightIntensity;
+			if (isShadow < 0 || isShadow < length(light - (origin + (t * direction)))){
+				cl = vec3(0, 0, 0);
+			}
+			vec3 reflectDirection = direction;
+			reflectOrigin = origin + t*direction;
+			vec3 reflectNormal = norm;
+			reflectionRay = normalize(reflectDirection - (2 * dot(reflectDirection, reflectNormal) * reflectNormal));
+			reflectiveness = myObjects[i] - SPHERE;
+			vec3 reflectionColor = objectColor;
+			colour = vec4(colorEquation(l, cl, norm, reflectionColor, light, origin, direction, t, vec3(1.f, 1.f, 1.f)), 0);
+		}
+		else if ((myObjects[i] >= TRIANGLE) && (myObjects[i] <= (REFLECTIVETRIANGLE ))){
+			objectColor = vec3(myObjects[i+10], myObjects[i+11], myObjects[i+12]);
+			norm = tNormalVec(vec3(myObjects[i+1], myObjects[i+2], myObjects[i+3]), vec3(myObjects[i+4], myObjects[i+5], myObjects[i+6]), vec3(myObjects[i+7], myObjects[i+8], myObjects[i+9]));
+			l = normalize(light - (origin + (t * direction)));
+			isShadow = checkShadows(myObjects, t, lightIndex + 7, arraySize, origin + t*direction, l);
+			cl = lightIntensity;
+			if (isShadow < 0 || isShadow < length(light - (origin + (t * direction)))){
+				cl = vec3(0, 0, 0);
+			}
+			vec3 reflectDirection = direction;
+			reflectOrigin = origin+ t*direction;
+			vec3 reflectNormal = norm;
+			reflectionRay = normalize(reflectDirection - (2 * dot(reflectDirection, reflectNormal) * reflectNormal));
+			reflectiveness = myObjects[i] - TRIANGLE;
+			vec3 reflectionColor = objectColor;
+			colour = vec4(colorEquation(l, cl, norm, reflectionColor, light, origin, direction, t, vec3(1.f, 1.f, 1.f)), 0);
+		}
+		else if ((myObjects[i] >= PLANE) && (myObjects[i] <= (REFLECTIVEPLANE))){
+			objectColor = vec3(myObjects[i+7], myObjects[i+8], myObjects[i+9]);
+			norm = vec3(myObjects[i+1], myObjects[i+2], myObjects[i+3]);
+			l = normalize(light - (origin + (t * direction)));
+			isShadow = checkShadows(myObjects, t, lightIndex + 7, arraySize, origin + t*direction, l);
+			cl = lightIntensity;
+			if (isShadow < 0 || isShadow < length(light - (origin + (t * direction)))){
+				cl = vec3(0, 0, 0);
+			}
+			vec3 reflectDirection = direction;
+			reflectOrigin = origin+ t*direction;
+			vec3 reflectNormal = norm;
+			reflectionRay = normalize(reflectDirection - (2 * dot(reflectDirection, reflectNormal) * reflectNormal));
+			reflectiveness = myObjects[i] - PLANE;
+			vec3 reflectionColor = objectColor;
+			colour = vec4(colorEquation(l, cl, norm, reflectionColor, light, origin, direction, t, vec3(1.f, 1.f, 1.f)), 0);
+		}
+	}
+	return colour;
+}
+
+void main(void)
+{
+	float view = 3.14159/3;
+	float z = 1 / tan(view/2); 
+
+	float myObjects[999];
+
+		// light
+		myObjects[0] = LIGHT;
+		myObjects[1] = 0.f;
+		myObjects[2] = 2.5f;
+		myObjects[3] = -7.75f;
+		
+		//light intensity
+		myObjects[4] = 0.3f;
+		myObjects[5] = 0.3f;
+		myObjects[6] = 0.3f;
+
+		//sphere
+		myObjects[7] = SPHERE + 0.9f;
+		myObjects[8] = 0.9f;
+		myObjects[9] = -1.925f;
+		myObjects[10] = -6.69f;
+		myObjects[11] = 0.825f;
+		//sphereColor
+		myObjects[12] = 1f;
+		myObjects[13] = 0.4f;
+		myObjects[14] = 1f;
+
+		//pyramid
+		//first triangle
+		myObjects[15] = TRIANGLE + 0.1f;
+		myObjects[16] = -0.4f;
+		myObjects[17] = -2.75f;
+		myObjects[18] = -9.55f;
+
+		myObjects[19] = -0.93f;
+		myObjects[20] = 0.55f;
+		myObjects[21] = -8.51f;
+
+		myObjects[22] = 0.11f;
+		myObjects[23] = -2.75f;
+		myObjects[24] = -7.98f;
+
+		myObjects[25] = 0.4f;
+		myObjects[26] = 0.2f;
+		myObjects[27] = 1f;
+
+		//second triangle
+		myObjects[28] = TRIANGLE + 0.1f;
+		myObjects[29] = 0.11f;
+		myObjects[30] = -2.75f;
+		myObjects[31] = -7.98f;
+
+		myObjects[32] = -0.93f;
+		myObjects[33] = 0.55f;
+		myObjects[34] = -8.51f;
+
+		myObjects[35] = -1.46f;
+		myObjects[36] = -2.75f;
+		myObjects[37] = -7.47f;
+
+		myObjects[38] = 0.4f;
+		myObjects[39] = 0.2f;
+		myObjects[40] = 1f;
+
+		//third triangle
+		myObjects[41] = TRIANGLE + 0.1f;
+		myObjects[42] = -1.46f;
+		myObjects[43] = -2.75f;
+		myObjects[44] = -7.47f;
+
+		myObjects[45] = -0.93f;
+		myObjects[46] = 0.55f;
+		myObjects[47] = -8.51f;
+
+		myObjects[48] = -1.97f;
+		myObjects[49] = -2.75f;
+		myObjects[50] = -9.04f;
+
+		myObjects[51] = 0.4f;
+		myObjects[52] = 0.2f;
+		myObjects[53] = 1f;
+
+		//fourth triangle
+		myObjects[54] = TRIANGLE + 0.1f;
+		myObjects[55] = -1.97f;
+		myObjects[56] = -2.75f;
+		myObjects[57] = -9.04f;
+
+		myObjects[58] = -0.93f;
+		myObjects[59] = 0.55f;
+		myObjects[60] = -8.51f;
+
+		myObjects[61] = -0.4f;
+		myObjects[62] = -2.75f;
+		myObjects[63] = -9.55f;
+
+		myObjects[64] = 0.4f;
+		myObjects[65] = 0.2f;
+		myObjects[66] = 1f;
+
+		//floor triangle
+		myObjects[67] = TRIANGLE;
+		myObjects[68] = 2.75f;
+		myObjects[69] = -2.75f;
+		myObjects[70] = -5f;
+
+		myObjects[71] = 2.75f;
+		myObjects[72] = -2.75f;
+		myObjects[73] = -10.5f;
+
+		myObjects[74] = -2.75f;
+		myObjects[75] = -2.75f;
+		myObjects[76] = -10.5f;
+
+		myObjects[77] = 0.f;
+		myObjects[78] = 0.f;
+		myObjects[79] = 0.1f;
+
+		//floor triangle 2
+		myObjects[80] = TRIANGLE;
+		myObjects[81] = -2.75f;
+		myObjects[82] = -2.75f;
+		myObjects[83] = -5f;
+
+		myObjects[84] = 2.75f;
+		myObjects[85] = -2.75f;
+		myObjects[86] = -5f;
+
+		myObjects[87] = -2.75f;
+		myObjects[88] = -2.75f;
+		myObjects[89] = -10.5f;
+
+		myObjects[90] = 0.f;
+		myObjects[91] = 0.f;
+		myObjects[92] = 0.1f;
+
+		//ceiling triangle 1
+		myObjects[93] = TRIANGLE;
+		myObjects[94] = 2.75f;
+		myObjects[95] = 2.75f;
+		myObjects[96] = -10.5f;
+
+		myObjects[97] = 2.75f;
+		myObjects[98] = 2.75f;
+		myObjects[99] = -5f;
+
+		myObjects[100] = -2.75f;
+		myObjects[101] = 2.75f;
+		myObjects[102] = -5f;
+
+		myObjects[103] = 1.f;
+		myObjects[104] = 1.f;
+		myObjects[105] = 1.f;
+
+		//ceiling triangle 2
+		myObjects[106] = TRIANGLE;
+		myObjects[107] = -2.75f;
+		myObjects[108] = 2.75f;
+		myObjects[109] = -10.5f;
+
+		myObjects[110] = 2.75f;
+		myObjects[111] = 2.75f;
+		myObjects[112] = -10.5f;
+
+		myObjects[113] = -2.75f;
+		myObjects[114] = 2.75f;
+		myObjects[115] = -5f;
+
+		myObjects[116] = 1.f;
+		myObjects[117] = 1.f;
+		myObjects[118] = 1.f;
+
+		//rightwall triangle 2
+		myObjects[119] = TRIANGLE;
+		myObjects[120] = 2.75f;
+		myObjects[121] = 2.75f;
+		myObjects[122] = -5f;
+
+		myObjects[123] = 2.75f;
+		myObjects[124] = 2.75f;
+		myObjects[125] = -10.5f;
+
+		myObjects[126] = 2.75f;
+		myObjects[127] = -2.75f;
+		myObjects[128] = -10.5f;
+
+		myObjects[129] = 0.f;
+		myObjects[130] = 1.f;
+		myObjects[131] = 0.f;
+
+		//right wall triangle 2
+		myObjects[132] = TRIANGLE;
+		myObjects[133] = 2.75f;
+		myObjects[134] = -2.75f;
+		myObjects[135] = -5f;
+
+		myObjects[136] = 2.75f;
+		myObjects[137] = 2.75f;
+		myObjects[138] = -5f;
+
+		myObjects[139] = 2.75f;
+		myObjects[140] = -2.75f;
+		myObjects[141] = -10.5f;
+
+		myObjects[142] = 0.f;
+		myObjects[143] = 1.f;
+		myObjects[144] = 0.f;
+
+		//left wall triangle 2
+		myObjects[145] = TRIANGLE;
+		myObjects[146] = -2.75f;
+		myObjects[147] = -2.75f;
+		myObjects[148] = -5f;
+
+		myObjects[149] = -2.75f;
+		myObjects[150] = -2.75f;
+		myObjects[151] = -10.5f;
+
+		myObjects[152] = -2.75f;
+		myObjects[153] = 2.75f;
+		myObjects[154] = -10.5f;
+
+		myObjects[155] = 1.f;
+		myObjects[156] = 0.f;
+		myObjects[157] = 0.f;
+
+		//left wall triangle 2
+		myObjects[158] = TRIANGLE;
+		myObjects[159] = -2.75f;
+		myObjects[160] = 2.75f;
+		myObjects[161] = -5f;
+
+		myObjects[162] = -2.75f;
+		myObjects[163] = -2.75f;
+		myObjects[164] = -5f;
+
+		myObjects[165] = -2.75f;
+		myObjects[166] = 2.75f;
+		myObjects[167] = -10.5f;
+
+		myObjects[168] = 1.f;
+		myObjects[169] = 0.f;
+		myObjects[170] = 0.f;
+
+		//plane
+		myObjects[171] = PLANE;
+		myObjects[172] = 0.f;
+		myObjects[173] = 0.f;
+		myObjects[174] = 1.f;
+
+		myObjects[175] = 0.f;
+		myObjects[176] = 0.f;
+		myObjects[177] = -10.5f;
+
+		myObjects[178] = 0.f;
+		myObjects[179] = 0.f;
+		myObjects[180] = 0.f;
+
+	int arraySize = 181;
+
+	int lightIndex = 0;
+
+	vec3 direction = normalize(vec3(position, -z));
+	vec3 origin = vec3(0, 0, 0);
+
+	vec4 colour = vec4(Colour, 0);
+
+	float t;
+	
+	float closestPoint = 1000000;
+
+	colour = calculateColor(myObjects, arraySize, direction, origin, closestPoint, lightIndex);
+	
+	/*vec4 fcolour = (colour * (1 - reflectiveness));
+	int i = 0;
+	float reflectiveness1 = reflectiveness;
+	float temp;
+	*/
+	int i = 1;
+	float[REFLECTIONS] myStack;
+	vec4[REFLECTIONS] myStack1;
+	myStack1[0] = colour;
+	myStack[0] = reflectiveness;
+	int reflectionLevel = 0;
+	while (i < REFLECTIONS){
+	//	if (reflectiveness == 0)
+	//		break;
+		myStack1[i] = calculateColor(myObjects, arraySize, reflectionRay, reflectOrigin, closestPoint, lightIndex);
+		myStack[i] = reflectiveness;
+		i++;
+		reflectionLevel++;
+	}
+//	FragmentColour = myStack1[1];
+	
+	i = 1;
+
+	#define LOOP_S
+
+	vec4 fcolour;
+	#ifdef HARD_ONE
+	if (reflectionLevel > 0)
+		fcolour = mix(myStack1[reflectionLevel - 1], myStack1[reflectionLevel], (myStack[reflectionLevel]));
+	#endif
+
+	#ifdef LOOP_C
+	while (i < reflectionLevel){
+		fcolour = mix(myStack1[reflectionLevel - i], fcolour, (myStack[reflectionLevel - i]));
+		i++;
+	}
+	#endif
+
+
+	#ifdef LOOP_S
+	float coeff=1;
+	fcolour = vec4(0);
+	i =0;
+	while (coeff > 0.001 && i <= reflectionLevel){
+		coeff *= myStack[i];
+		fcolour  += myStack1[i] * (1-coeff);
+		i++;
+	}
+	#endif
+
+//	fcolour = mix(myStack1[0], myStack1[1], (1 - myStack[0]));
+	FragmentColour = fcolour;
+   	//FragmentColour = (reflectionLevel > 0) ? fcolour : colour;
+}

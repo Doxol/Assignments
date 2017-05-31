@@ -1,0 +1,28 @@
+README
+David Sepulveda
+10161931
+
+Compile: make
+
+Run:
+	./Assignment4
+
+Boilerplate Used:
+	Lee Ringham
+
+Keyboard Input:
+	1: scene 1
+	2: scene 2
+	3: scene 3
+	up: increment the origins y by 0.1
+	down: decrement the origins y by 0.1
+	left: decrement the origins x by 0.1
+	right: increment the origins x by 0.1
+	z: increment the origins z by 0.1
+	shift-z: decrement the origins z by 0.1
+
+Collaborators:
+	Brandon Goberdhansinh
+	Camilo Talero
+	Scott Saunders
+	Tina Huynh

@@ -1,2 +1,2 @@
-# Java
-Java Code
+# Assignments
+Code done for many assignments throughout my degree.
